@@ -29,7 +29,6 @@ Before using this MCP server, you need:
    - Enter code: `2055492159`
    - Restart Anki
 3. **Python 3.11+** - Required for running the server
-4. **uv** - Python package manager (optional but recommended)
 
 ### Verify AnkiConnect is Running
 
@@ -43,32 +42,26 @@ You should see: `"AnkiConnect v.6"`
 
 ## Installation
 
-### Option 1: Using uv (Recommended)
+### Option 1: Install from PyPI (Recommended)
 
-**uv** is a fast Python package manager. If you don't have it, [install it first](https://docs.astral.sh/uv/).
+The easiest way to get started. No need to clone the repository.
 
 ```bash
-# Clone the repository
-git clone https://github.com/jbkroner/baraja-mcp.git
-cd baraja-mcp
-
-# Install dependencies and create virtual environment
-uv sync
+pip install baraja-mcp
 ```
 
-### Option 2: Using pip
+Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-# Clone the repository
+uv pip install baraja-mcp
+```
+
+### Option 2: Install from source
+
+```bash
 git clone https://github.com/jbkroner/baraja-mcp.git
 cd baraja-mcp
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -e .
+pip install .
 ```
 
 ## Configuration
@@ -80,17 +73,17 @@ Add this to your Claude Desktop configuration file:
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-#### If installed with uv:
+#### Using uvx (Recommended)
+
+This runs the server directly from PyPI with no manual install needed. Requires [uv](https://docs.astral.sh/uv/).
 
 ```json
 {
   "mcpServers": {
     "anki": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "--directory",
-        "/absolute/path/to/baraja-mcp",
+        "--from", "baraja-mcp",
         "baraja-mcp-server"
       ]
     }
@@ -98,20 +91,22 @@ Add this to your Claude Desktop configuration file:
 }
 ```
 
-Replace `/absolute/path/to/baraja-mcp` with the actual path to this directory.
+#### Using pip install
 
-#### If installed with pip/venv:
+If you installed with `pip install baraja-mcp`:
 
 ```json
 {
   "mcpServers": {
     "anki": {
-      "command": "/absolute/path/to/baraja-mcp/.venv/bin/baraja-mcp-server",
+      "command": "baraja-mcp-server",
       "args": []
     }
   }
 }
 ```
+
+> **Note:** If `baraja-mcp-server` isn't on your PATH, use the full path instead (e.g., `~/.local/bin/baraja-mcp-server` or your virtualenv's `bin/` directory).
 
 ### Restart Claude Desktop
 

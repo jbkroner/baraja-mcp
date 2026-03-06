@@ -1,4 +1,4 @@
-"""Entry point for running the Anki MCP server."""
+"""Entry point for running the Baraja MCP server."""
 
 from .server import main
 

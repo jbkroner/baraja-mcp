@@ -1,4 +1,4 @@
-# Anki MCP Server
+# Baraja MCP Server
 
 A Model Context Protocol (MCP) server that connects Claude Desktop to your local Anki instance via AnkiConnect. Enables Claude to create, manage, and search flashcards directly in your Anki decks.
 
@@ -49,8 +49,8 @@ You should see: `"AnkiConnect v.6"`
 
 ```bash
 # Clone the repository
-git clone https://github.com/jbkroner/anki-mcp.git
-cd anki-mcp
+git clone https://github.com/jbkroner/baraja-mcp.git
+cd baraja-mcp
 
 # Install dependencies and create virtual environment
 uv sync
@@ -60,8 +60,8 @@ uv sync
 
 ```bash
 # Clone the repository
-git clone https://github.com/jbkroner/anki-mcp.git
-cd anki-mcp
+git clone https://github.com/jbkroner/baraja-mcp.git
+cd baraja-mcp
 
 # Create virtual environment
 python -m venv venv
@@ -90,15 +90,15 @@ Add this to your Claude Desktop configuration file:
       "args": [
         "run",
         "--directory",
-        "/absolute/path/to/anki-mcp",
-        "anki-mcp-server"
+        "/absolute/path/to/baraja-mcp",
+        "baraja-mcp-server"
       ]
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/anki-mcp` with the actual path to this directory.
+Replace `/absolute/path/to/baraja-mcp` with the actual path to this directory.
 
 #### If installed with pip/venv:
 
@@ -106,7 +106,7 @@ Replace `/absolute/path/to/anki-mcp` with the actual path to this directory.
 {
   "mcpServers": {
     "anki": {
-      "command": "/absolute/path/to/anki-mcp/.venv/bin/anki-mcp-server",
+      "command": "/absolute/path/to/baraja-mcp/.venv/bin/baraja-mcp-server",
       "args": []
     }
   }
@@ -545,7 +545,7 @@ Claude: [Uses search_notes with query="front:ephemeral"]
 
 ## Spanish Helper Functions
 
-The server includes Python helper functions for formatting Spanish cards (located in `src/anki_mcp/spanish.py`):
+The server includes Python helper functions for formatting Spanish cards (located in `src/baraja_mcp/spanish.py`):
 
 ### `format_vocab_card()`
 Creates consistently formatted vocabulary cards with:
@@ -622,11 +622,11 @@ pytest
 ### Project Structure
 
 ```
-anki-mcp/
+baraja-mcp/
 ├── pyproject.toml              # Project configuration
 ├── README.md                   # This file
 ├── src/
-│   └── anki_mcp/
+│   └── baraja_mcp/
 │       ├── __init__.py        # Package initialization
 │       ├── server.py          # MCP server + tool definitions
 │       ├── anki_client.py     # AnkiConnect API wrapper

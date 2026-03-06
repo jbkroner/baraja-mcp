@@ -1,4 +1,4 @@
-"""Anki MCP Server - Connect Claude Desktop to Anki via AnkiConnect."""
+"""Baraja MCP Server - Connect Claude Desktop to Anki via AnkiConnect."""
 
 __version__ = "0.1.0"
 

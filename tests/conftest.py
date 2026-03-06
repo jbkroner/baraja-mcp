@@ -1,7 +1,7 @@
-"""Pytest configuration and fixtures for Anki MCP tests."""
+"""Pytest configuration and fixtures for Baraja MCP tests."""
 
 import pytest
-from anki_mcp.anki_client import AnkiClient
+from baraja_mcp.anki_client import AnkiClient
 from mock_anki import MockAnkiConnect
 
 

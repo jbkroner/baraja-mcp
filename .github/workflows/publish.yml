@@ -1,10 +1,8 @@
-name: CI
+name: Publish to PyPI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  release:
+    types: [published]
 
 jobs:
   test:
@@ -33,7 +31,8 @@ jobs:
         run: |
           uv run pytest tests/ -v
 
-  lint:
+  build:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,12 +45,27 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      - name: Install dependencies
-        run: |
-          uv sync
+      - name: Build package
+        run: uv build
 
-      - name: Check syntax
-        run: |
-          uv run python -m py_compile src/baraja_mcp/anki_client.py
-          uv run python -m py_compile src/baraja_mcp/server.py
-          uv run python -m py_compile src/baraja_mcp/spanish.py
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

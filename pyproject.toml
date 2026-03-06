@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "anki-mcp"
+name = "baraja-mcp"
 version = "0.1.0"
-description = "MCP server for connecting Claude Desktop to Anki via AnkiConnect"
+description = "Baraja MCP Server - Connect Claude Desktop to Anki via AnkiConnect"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -24,10 +24,10 @@ dev = [
 ]
 
 [project.scripts]
-anki-mcp-server = "anki_mcp.server:main"
+baraja-mcp-server = "baraja_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/anki_mcp"]
+packages = ["src/baraja_mcp"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

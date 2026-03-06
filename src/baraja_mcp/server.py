@@ -13,7 +13,7 @@ from .anki_client import AnkiClient, AnkiConnectError
 
 
 # Initialize the MCP server
-app = Server("anki-mcp")
+app = Server("baraja-mcp")
 
 # Global AnkiClient instance
 anki = AnkiClient()

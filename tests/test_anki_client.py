@@ -4,7 +4,7 @@ These tests use a mock AnkiConnect server and can run in CI without Anki.
 """
 
 import pytest
-from anki_mcp.anki_client import AnkiClient, AnkiConnectError
+from baraja_mcp.anki_client import AnkiClient, AnkiConnectError
 
 
 # Mark all tests in this module as async

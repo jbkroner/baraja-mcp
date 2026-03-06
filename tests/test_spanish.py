@@ -1,7 +1,7 @@
 """Tests for Spanish flashcard helper functions."""
 
 import pytest
-from anki_mcp.spanish import (
+from baraja_mcp.spanish import (
     format_vocab_card,
     format_verb_card,
     format_sentence_cloze,

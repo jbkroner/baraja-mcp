@@ -324,11 +324,16 @@ class MockAnkiConnect:
         for note_id in note_ids:
             note = self.state.notes.get(note_id)
             if note:
+                card_ids = [
+                    card.card_id for card in self.state.cards.values()
+                    if card.note_id == note_id
+                ]
                 results.append({
                     "noteId": note.note_id,
                     "modelName": note.model_name,
                     "tags": note.tags,
                     "fields": {k: {"value": v, "order": i} for i, (k, v) in enumerate(note.fields.items())},
+                    "cards": card_ids,
                 })
 
         return results

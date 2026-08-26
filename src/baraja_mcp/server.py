@@ -127,7 +127,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="search_notes",
-            description="Search Anki notes using Anki's search syntax (e.g., 'deck:Spanish tag:verb').",
+            description="Search Anki notes using Anki's search syntax (e.g., 'deck:Spanish tag:verb'). Field values are truncated to ~50 chars by default; use get_notes for exact values.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -137,11 +137,41 @@ async def list_tools() -> list[Tool]:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Max results to return",
+                        "description": "Max results to return in this page",
                         "default": 20
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Number of matching notes to skip, for paging through large result sets",
+                        "default": 0
+                    },
+                    "full": {
+                        "type": "boolean",
+                        "description": "Return complete, untruncated field values (default: false)",
+                        "default": False
+                    },
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Only include these field names in the output, with complete values"
                     }
                 },
                 "required": ["query"]
+            }
+        ),
+        Tool(
+            name="get_notes",
+            description="Get complete, untruncated data (fields, tags, model, card IDs) for specific note IDs. Use after search_notes when you need exact field values instead of the truncated preview.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Note IDs to fetch"
+                    }
+                },
+                "required": ["note_ids"]
             }
         ),
         Tool(
@@ -635,6 +665,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         elif name == "search_notes":
             query = arguments["query"]
             limit = arguments.get("limit", 20)
+            offset = arguments.get("offset", 0)
+            only_fields = arguments.get("fields")
+            show_full_values = arguments.get("full", False) or bool(only_fields)
 
             # Find notes
             note_ids = await anki.find_notes(query)
@@ -645,22 +678,41 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     text=f"No notes found matching: {query}"
                 )]
 
-            # Limit results
-            note_ids = note_ids[:limit]
+            total = len(note_ids)
+            page_ids = note_ids[offset:offset + limit]
+
+            if not page_ids:
+                return [TextContent(
+                    type="text",
+                    text=f"No notes at offset {offset} (found {total} total matching: {query})"
+                )]
 
             # Get note details
-            notes = await anki.notes_info(note_ids)
+            notes = await anki.notes_info(page_ids)
 
             # Format results
-            result_parts = [f"Found {len(notes)} notes (showing up to {limit}):\n"]
+            if offset or total > offset + len(notes):
+                header = f"Found {total} notes matching query (showing {offset + 1}-{offset + len(notes)}):\n"
+            else:
+                header = f"Found {len(notes)} notes (showing up to {limit}):\n"
+
+            result_parts = [header]
 
             for note in notes:
                 fields = note.get("fields", {})
                 tags = note.get("tags", [])
                 note_id = note.get("noteId")
 
-                # Get field values
-                field_values = [f"{k}: {v.get('value', '')[:50]}" for k, v in fields.items()]
+                field_items = fields.items()
+                if only_fields:
+                    field_items = [(k, v) for k, v in field_items if k in only_fields]
+
+                field_values = []
+                for k, v in field_items:
+                    value = v.get("value", "")
+                    if not show_full_values:
+                        value = value[:50]
+                    field_values.append(f"{k}: {value}")
                 fields_str = " | ".join(field_values)
 
                 tags_str = f" [{', '.join(tags)}]" if tags else ""
@@ -669,6 +721,40 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text="\n".join(result_parts)
+            )]
+
+        elif name == "get_notes":
+            note_ids = arguments["note_ids"]
+
+            notes = await anki.notes_info(note_ids)
+
+            if not notes:
+                return [TextContent(
+                    type="text",
+                    text="No notes found for the given IDs."
+                )]
+
+            note_blocks = []
+            for note in notes:
+                note_id = note.get("noteId")
+                model = note.get("modelName", "")
+                tags = note.get("tags", [])
+                card_ids = note.get("cards", [])
+                fields = note.get("fields", {})
+
+                lines = [f"Note ID: {note_id}", f"  Model: {model}"]
+                if card_ids:
+                    lines.append(f"  Card IDs: {', '.join(str(cid) for cid in card_ids)}")
+                if tags:
+                    lines.append(f"  Tags: {', '.join(tags)}")
+                for field_name, field_data in fields.items():
+                    lines.append(f"  {field_name}: {field_data.get('value', '')}")
+                note_blocks.append("\n".join(lines))
+
+            header = f"Found {len(notes)} notes:\n"
+            return [TextContent(
+                type="text",
+                text=header + "\n\n".join(note_blocks)
             )]
 
         elif name == "add_cloze_card":

@@ -164,12 +164,16 @@ Claude: [Uses add_flashcard with deck="Geography", front="What is the capital of
 ### `add_flashcards_batch`
 
 Add multiple flashcards in one operation (much faster than adding individually).
+Duplicates are skipped rather than failing the whole batch — the response
+lists which cards were skipped, their index in the input, and the note ID(s)
+they collided with.
 
 **Parameters:**
 - `deck` (required): Target deck name
 - `cards` (required): List of card objects with `front`, `back`, and optional `tags`
 - `tags` (optional): Tags applied to all cards
 - `model` (optional): Note type (default: "Basic")
+- `allow_duplicates` (optional): Add cards even if they duplicate an existing note (default: false)
 
 **Example:**
 ```

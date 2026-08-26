@@ -19,6 +19,11 @@ app = Server("baraja-mcp")
 anki = AnkiClient()
 
 
+def _escape_anki_query_value(value: str) -> str:
+    """Escape a value for use inside a quoted Anki search term."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     """List available tools."""
@@ -120,6 +125,11 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Note type (default: Basic)",
                         "default": "Basic"
+                    },
+                    "allow_duplicates": {
+                        "type": "boolean",
+                        "description": "Add cards even if they duplicate an existing note (default: false, duplicates are skipped and reported)",
+                        "default": False
                     }
                 },
                 "required": ["deck", "cards"]
@@ -588,6 +598,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             cards = arguments["cards"]
             global_tags = arguments.get("tags", [])
             model = arguments.get("model", "Basic")
+            allow_duplicates = arguments.get("allow_duplicates", False)
 
             # Ensure deck exists
             try:
@@ -606,26 +617,55 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         "Front": card["front"],
                         "Back": card["back"]
                     },
-                    "tags": card_tags
+                    "tags": card_tags,
+                    "options": {"allowDuplicate": allow_duplicates}
                 }
                 notes.append(note)
 
-            # Add all notes
-            note_ids = await anki.add_notes(notes)
+            # Figure out up front which notes would collide, so a duplicate
+            # in the batch can't roll back the notes that are fine to add.
+            skipped = []
+            addable_indices = list(range(len(notes)))
+            if not allow_duplicates and notes:
+                checks = await anki.can_add_notes_with_error_detail(notes)
+                addable_indices = [i for i, check in enumerate(checks) if check.get("canAdd")]
+                for i, check in enumerate(checks):
+                    if not check.get("canAdd"):
+                        existing_ids = await anki.find_notes(f'Front:"{_escape_anki_query_value(cards[i]["front"])}"')
+                        skipped.append({
+                            "index": i,
+                            "front": cards[i]["front"],
+                            "reason": check.get("error") or "duplicate",
+                            "existing_note_ids": existing_ids
+                        })
 
-            # Count results
-            added = sum(1 for nid in note_ids if nid is not None)
-            duplicates = sum(1 for nid in note_ids if nid is None)
+            addable_notes = [notes[i] for i in addable_indices]
+            note_ids = await anki.add_notes(addable_notes) if addable_notes else []
+
+            added = [
+                {"index": i, "note_id": nid, "front": cards[i]["front"]}
+                for i, nid in zip(addable_indices, note_ids)
+                if nid is not None
+            ]
 
             result_parts = [
                 f"✓ Batch add to '{deck}' complete:",
-                f"  - Added: {added}",
-                f"  - Duplicates skipped: {duplicates}",
+                f"  - Added: {len(added)}",
+                f"  - Duplicates skipped: {len(skipped)}",
                 f"  - Total: {len(cards)}"
             ]
 
             if global_tags:
                 result_parts.append(f"  - Tags: {', '.join(global_tags)}")
+
+            if skipped:
+                result_parts.append("\nSkipped duplicates:")
+                for s in skipped:
+                    existing = ", ".join(str(nid) for nid in s["existing_note_ids"]) or "unknown"
+                    result_parts.append(
+                        f"  - [{s['index']}] \"{s['front']}\" (existing note ID: {existing})"
+                    )
+                result_parts.append("\nPass allow_duplicates=true to add these anyway.")
 
             return [TextContent(
                 type="text",

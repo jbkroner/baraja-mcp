@@ -154,6 +154,7 @@ Add a single flashcard to Anki.
 - `back` (required): Back of the card
 - `tags` (optional): List of tags
 - `model` (optional): Note type (default: "Basic")
+- `duplicate_scope` (optional): How broadly to check for duplicates — `"collection"` (default, matches Anki's default), `"deck"` (only the target deck), or `"deck_and_subdecks"`
 
 **Example:**
 ```
@@ -174,6 +175,7 @@ they collided with.
 - `tags` (optional): Tags applied to all cards
 - `model` (optional): Note type (default: "Basic")
 - `allow_duplicates` (optional): Add cards even if they duplicate an existing note (default: false)
+- `duplicate_scope` (optional): How broadly to check for duplicates — `"collection"` (default, matches Anki's default), `"deck"` (only the target deck), or `"deck_and_subdecks"`
 
 **Example:**
 ```

@@ -81,3 +81,109 @@ class TestAddFlashcardsBatchDuplicates:
         assert "Added: 2" in text
         assert "Duplicates skipped: 0" in text
         assert "Skipped duplicates" not in text
+
+
+class TestDuplicateScope:
+    async def test_add_flashcard_collection_scope_blocks_cross_deck_duplicate(self, patched_anki):
+        """Default scope ('collection') should block a duplicate that only exists in another deck."""
+        await patched_anki.create_deck("Español")
+        await patched_anki.add_note("Español", "Basic", {"Front": "ayer", "Back": "yesterday"})
+
+        result = await server.call_tool(
+            "add_flashcard",
+            {"deck": "A2.2 Ch1", "front": "ayer", "back": "yesterday"},
+        )
+
+        assert "Duplicate" in result[0].text
+
+    async def test_add_flashcard_deck_scope_allows_cross_deck_duplicate(self, patched_anki):
+        """Scoping to 'deck' should let a card through when the collision is in an unrelated deck."""
+        await patched_anki.create_deck("Español")
+        await patched_anki.add_note("Español", "Basic", {"Front": "ayer", "Back": "yesterday"})
+
+        result = await server.call_tool(
+            "add_flashcard",
+            {
+                "deck": "A2.2 Ch1",
+                "front": "ayer",
+                "back": "yesterday",
+                "duplicate_scope": "deck",
+            },
+        )
+
+        assert "Added flashcard" in result[0].text
+
+    async def test_add_flashcard_deck_scope_still_blocks_same_deck_duplicate(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        await patched_anki.add_note(test_deck_name, "Basic", {"Front": "ayer", "Back": "yesterday"})
+
+        result = await server.call_tool(
+            "add_flashcard",
+            {
+                "deck": test_deck_name,
+                "front": "ayer",
+                "back": "yesterday",
+                "duplicate_scope": "deck",
+            },
+        )
+
+        assert "Duplicate" in result[0].text
+
+    async def test_batch_deck_scope_ignores_unrelated_deck_collisions(self, patched_anki):
+        """The exact repro from the filed issue: a chapter deck shouldn't be
+        blocked by cards living in an unrelated mega-deck."""
+        await patched_anki.create_deck("Español")
+        await patched_anki.add_note("Español", "Basic", {"Front": "el camping", "Back": "campsite"})
+
+        result = await server.call_tool(
+            "add_flashcards_batch",
+            {
+                "deck": "A2.2 Ch1",
+                "cards": [{"front": "el camping", "back": "campsite"}],
+                "duplicate_scope": "deck",
+            },
+        )
+
+        text = result[0].text
+        assert "Added: 1" in text
+        assert "Duplicates skipped: 0" in text
+
+    async def test_batch_deck_and_subdecks_scope_blocks_child_but_not_sibling(self, patched_anki):
+        await patched_anki.create_deck("Español::ch11")
+        await patched_anki.add_note("Español::ch11", "Basic", {"Front": "anoche", "Back": "last night"})
+        await patched_anki.create_deck("OtroTema")
+        await patched_anki.add_note("OtroTema", "Basic", {"Front": "ayer", "Back": "yesterday"})
+
+        result = await server.call_tool(
+            "add_flashcards_batch",
+            {
+                "deck": "Español",
+                "cards": [
+                    {"front": "anoche", "back": "last night"},  # collides via subdeck
+                    {"front": "ayer", "back": "yesterday"},  # unrelated sibling deck, should add
+                ],
+                "duplicate_scope": "deck_and_subdecks",
+            },
+        )
+
+        text = result[0].text
+        assert "Added: 1" in text
+        assert "Duplicates skipped: 1" in text
+        assert '"anoche"' in text
+
+    async def test_omitted_duplicate_scope_defaults_to_collection(self, patched_anki):
+        """Default (param omitted) must be unchanged from before duplicate_scope existed."""
+        await patched_anki.create_deck("Español")
+        await patched_anki.add_note("Español", "Basic", {"Front": "anoche", "Back": "last night"})
+
+        result = await server.call_tool(
+            "add_flashcards_batch",
+            {
+                "deck": "A2.2 Ch1",
+                "cards": [{"front": "anoche", "back": "last night"}],
+            },
+        )
+
+        text = result[0].text
+        assert "Added: 0" in text
+        assert "Duplicates skipped: 1" in text

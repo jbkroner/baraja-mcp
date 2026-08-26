@@ -202,29 +202,47 @@ class MockAnkiConnect:
     def _get_tags(self, params: dict) -> list[str]:
         return list(self.state.tags)
 
-    def _find_duplicate_note_ids(self, fields: dict[str, str], allow_duplicate: bool = False) -> list[int]:
+    def _find_duplicate_note_ids(self, fields: dict[str, str], options: dict | None = None) -> list[int]:
         """
         Find existing notes that collide with the given fields.
 
-        Mirrors AnkiConnect's default duplicate check: match on the first
-        field's value, across the whole collection (collection-wide scope).
+        Mirrors AnkiConnect's duplicate check: match on the first field's
+        value. Scope defaults to the whole collection, matching
+        AnkiConnect's default; pass options["duplicateScope"] = "deck" (with
+        duplicateScopeOptions.deckName and optionally checkChildren) to scope
+        it to a deck instead.
 
         Args:
             fields: Fields of the note being checked
-            allow_duplicate: If True, always returns no collisions
+            options: AnkiConnect note options (allowDuplicate,
+                duplicateScope, duplicateScopeOptions)
 
         Returns:
             List of existing note IDs that collide, empty if none (or if
-            allow_duplicate is set)
+            allowDuplicate is set)
         """
-        if allow_duplicate:
+        options = options or {}
+        if options.get("allowDuplicate"):
             return []
+
+        scope = options.get("duplicateScope", "collection")
+        scope_opts = options.get("duplicateScopeOptions") or {}
+        scope_deck = scope_opts.get("deckName")
+        check_children = scope_opts.get("checkChildren", False)
+
+        def _in_scope(existing_deck: str) -> bool:
+            if scope != "deck" or not scope_deck:
+                return True
+            if existing_deck == scope_deck:
+                return True
+            return check_children and existing_deck.startswith(f"{scope_deck}::")
 
         first_field_value = list(fields.values())[0] if fields else ""
         return [
             existing_note.note_id
             for existing_note in self.state.notes.values()
             if (list(existing_note.fields.values())[0] if existing_note.fields else "") == first_field_value
+            and _in_scope(existing_note.deck_name)
         ]
 
     def _add_note(self, params: dict) -> int | None:
@@ -235,7 +253,7 @@ class MockAnkiConnect:
         tags = note_data.get("tags", [])
         options = note_data.get("options", {})
 
-        if self._find_duplicate_note_ids(fields, options.get("allowDuplicate", False)):
+        if self._find_duplicate_note_ids(fields, options):
             return None  # Duplicate
 
         # Create the note
@@ -292,7 +310,7 @@ class MockAnkiConnect:
         for note_data in notes:
             fields = note_data["fields"]
             options = note_data.get("options", {})
-            duplicates = self._find_duplicate_note_ids(fields, options.get("allowDuplicate", False))
+            duplicates = self._find_duplicate_note_ids(fields, options)
             results.append(not duplicates)
         return results
 
@@ -302,7 +320,7 @@ class MockAnkiConnect:
         for note_data in notes:
             fields = note_data["fields"]
             options = note_data.get("options", {})
-            duplicates = self._find_duplicate_note_ids(fields, options.get("allowDuplicate", False))
+            duplicates = self._find_duplicate_note_ids(fields, options)
             if duplicates:
                 results.append({"canAdd": False, "error": "cannot create note because it is a duplicate"})
             else:

@@ -189,11 +189,16 @@ Claude: [Uses add_flashcards_batch with appropriate cards]
 
 ### `search_notes`
 
-Search for existing notes using Anki's search syntax.
+Search for existing notes using Anki's search syntax. Field values are
+truncated to ~50 chars by default — use `full`/`fields` for exact values, or
+`get_notes` if you already have the note IDs.
 
 **Parameters:**
 - `query` (required): Search query
-- `limit` (optional): Max results (default: 20)
+- `limit` (optional): Max results per page (default: 20)
+- `offset` (optional): Number of matching notes to skip, for paging through large result sets (default: 0)
+- `full` (optional): Return complete, untruncated field values (default: false)
+- `fields` (optional): Only include these field names in the output, with complete values
 
 **Search Syntax Examples:**
 - `deck:Spanish` - All notes in Spanish deck
@@ -205,6 +210,21 @@ Search for existing notes using Anki's search syntax.
 ```
 User: "Find all my Spanish verb cards"
 Claude: [Uses search_notes with query="deck:Spanish tag:verb"]
+```
+
+### `get_notes`
+
+Get complete, untruncated data (fields, tags, model, card IDs) for specific
+note IDs. Use this after `search_notes` when you need exact field values
+instead of the truncated preview.
+
+**Parameters:**
+- `note_ids` (required): List of note IDs to fetch
+
+**Example:**
+```
+User: "What's the exact back text on note 1774317432278?"
+Claude: [Uses get_notes with note_ids=[1774317432278]]
 ```
 
 ### `add_cloze_card`

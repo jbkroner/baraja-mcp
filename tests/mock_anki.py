@@ -134,6 +134,7 @@ class MockAnkiConnect:
             "addNote": self._add_note,
             "addNotes": self._add_notes,
             "canAddNotes": self._can_add_notes,
+            "canAddNotesWithErrorDetail": self._can_add_notes_with_error_detail,
             "findNotes": self._find_notes,
             "notesInfo": self._notes_info,
             "addTags": self._add_tags,
@@ -201,19 +202,41 @@ class MockAnkiConnect:
     def _get_tags(self, params: dict) -> list[str]:
         return list(self.state.tags)
 
+    def _find_duplicate_note_ids(self, fields: dict[str, str], allow_duplicate: bool = False) -> list[int]:
+        """
+        Find existing notes that collide with the given fields.
+
+        Mirrors AnkiConnect's default duplicate check: match on the first
+        field's value, across the whole collection (collection-wide scope).
+
+        Args:
+            fields: Fields of the note being checked
+            allow_duplicate: If True, always returns no collisions
+
+        Returns:
+            List of existing note IDs that collide, empty if none (or if
+            allow_duplicate is set)
+        """
+        if allow_duplicate:
+            return []
+
+        first_field_value = list(fields.values())[0] if fields else ""
+        return [
+            existing_note.note_id
+            for existing_note in self.state.notes.values()
+            if (list(existing_note.fields.values())[0] if existing_note.fields else "") == first_field_value
+        ]
+
     def _add_note(self, params: dict) -> int | None:
         note_data = params["note"]
         deck_name = note_data["deckName"]
         model_name = note_data["modelName"]
         fields = note_data["fields"]
         tags = note_data.get("tags", [])
+        options = note_data.get("options", {})
 
-        # Check for duplicates (based on first field)
-        first_field_value = list(fields.values())[0] if fields else ""
-        for existing_note in self.state.notes.values():
-            existing_first = list(existing_note.fields.values())[0] if existing_note.fields else ""
-            if existing_first == first_field_value and existing_note.deck_name == deck_name:
-                return None  # Duplicate
+        if self._find_duplicate_note_ids(fields, options.get("allowDuplicate", False)):
+            return None  # Duplicate
 
         # Create the note
         note_id = self.state.next_note_id
@@ -267,19 +290,23 @@ class MockAnkiConnect:
         notes = params["notes"]
         results = []
         for note_data in notes:
-            # Check if note would be a duplicate
             fields = note_data["fields"]
-            deck_name = note_data["deckName"]
-            first_field_value = list(fields.values())[0] if fields else ""
+            options = note_data.get("options", {})
+            duplicates = self._find_duplicate_note_ids(fields, options.get("allowDuplicate", False))
+            results.append(not duplicates)
+        return results
 
-            is_duplicate = False
-            for existing_note in self.state.notes.values():
-                existing_first = list(existing_note.fields.values())[0] if existing_note.fields else ""
-                if existing_first == first_field_value and existing_note.deck_name == deck_name:
-                    is_duplicate = True
-                    break
-
-            results.append(not is_duplicate)
+    def _can_add_notes_with_error_detail(self, params: dict) -> list[dict]:
+        notes = params["notes"]
+        results = []
+        for note_data in notes:
+            fields = note_data["fields"]
+            options = note_data.get("options", {})
+            duplicates = self._find_duplicate_note_ids(fields, options.get("allowDuplicate", False))
+            if duplicates:
+                results.append({"canAdd": False, "error": "cannot create note because it is a duplicate"})
+            else:
+                results.append({"canAdd": True, "error": None})
         return results
 
     def _find_notes(self, params: dict) -> list[int]:
@@ -294,6 +321,7 @@ class MockAnkiConnect:
 
     def _note_matches_query(self, note: MockNote, query: str) -> bool:
         """Simple query matching for testing."""
+        original_query = query
         query = query.lower()
 
         # Handle deck: queries
@@ -313,6 +341,20 @@ class MockAnkiConnect:
             if tag_match:
                 tag = tag_match.group(1)
                 if tag.lower() not in [t.lower() for t in note.tags]:
+                    return False
+
+        # Handle arbitrary field:"value" or field:value queries (exact match)
+        import re
+        field_match = re.search(r'(\w+):"([^"]*)"|(\w+):(\S+)', original_query)
+        if field_match:
+            field_name = (field_match.group(1) or field_match.group(3) or "").lower()
+            field_value = field_match.group(2) if field_match.group(1) is not None else field_match.group(4)
+            if field_name not in ("deck", "tag"):
+                note_field_value = next(
+                    (v for k, v in note.fields.items() if k.lower() == field_name),
+                    None
+                )
+                if note_field_value is None or note_field_value.lower() != (field_value or "").lower():
                     return False
 
         return True

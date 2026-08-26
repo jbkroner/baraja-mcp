@@ -155,6 +155,22 @@ class AnkiClient:
         """
         return await self._invoke("canAddNotes", notes=notes)
 
+    async def can_add_notes_with_error_detail(self, notes: list[dict]) -> list[dict]:
+        """
+        Check if notes can be added, with a reason when they can't.
+
+        Unlike can_add_notes, this does not attempt to add anything, so it's
+        safe to call before add_notes to figure out which notes would collide.
+
+        Args:
+            notes: List of note dictionaries
+
+        Returns:
+            List of dicts, one per note, each shaped like
+            {"canAdd": bool, "error": str | None}
+        """
+        return await self._invoke("canAddNotesWithErrorDetail", notes=notes)
+
     async def find_notes(self, query: str) -> list[int]:
         """
         Search for notes using Anki search syntax.

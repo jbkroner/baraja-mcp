@@ -24,6 +24,30 @@ def _escape_anki_query_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _build_duplicate_options(allow_duplicates: bool, duplicate_scope: str, deck: str) -> dict:
+    """
+    Build the AnkiConnect note "options" dict for duplicate detection.
+
+    Args:
+        allow_duplicates: If True, forces the note through regardless of scope
+        duplicate_scope: "collection" (AnkiConnect's default), "deck", or
+            "deck_and_subdecks"
+        deck: Target deck name, used when scope is deck-based
+
+    Returns:
+        AnkiConnect note options dict
+    """
+    options: dict = {"allowDuplicate": allow_duplicates}
+    if duplicate_scope in ("deck", "deck_and_subdecks"):
+        options["duplicateScope"] = "deck"
+        options["duplicateScopeOptions"] = {
+            "deckName": deck,
+            "checkChildren": duplicate_scope == "deck_and_subdecks",
+            "checkAllModels": False
+        }
+    return options
+
+
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     """List available tools."""
@@ -83,6 +107,12 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Note type (default: Basic)",
                         "default": "Basic"
+                    },
+                    "duplicate_scope": {
+                        "type": "string",
+                        "enum": ["collection", "deck", "deck_and_subdecks"],
+                        "description": "How broadly to check for duplicates: 'collection' (default, matches Anki's default), 'deck' (only the target deck), or 'deck_and_subdecks'",
+                        "default": "collection"
                     }
                 },
                 "required": ["deck", "front", "back"]
@@ -130,6 +160,12 @@ async def list_tools() -> list[Tool]:
                         "type": "boolean",
                         "description": "Add cards even if they duplicate an existing note (default: false, duplicates are skipped and reported)",
                         "default": False
+                    },
+                    "duplicate_scope": {
+                        "type": "string",
+                        "enum": ["collection", "deck", "deck_and_subdecks"],
+                        "description": "How broadly to check for duplicates: 'collection' (default, matches Anki's default), 'deck' (only the target deck), or 'deck_and_subdecks'",
+                        "default": "collection"
                     }
                 },
                 "required": ["deck", "cards"]
@@ -570,6 +606,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             back = arguments["back"]
             tags = arguments.get("tags", [])
             model = arguments.get("model", "Basic")
+            duplicate_scope = arguments.get("duplicate_scope", "collection")
 
             # Ensure deck exists
             try:
@@ -579,7 +616,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
             # Add the note
             fields = {"Front": front, "Back": back}
-            note_id = await anki.add_note(deck, model, fields, tags)
+            options = _build_duplicate_options(False, duplicate_scope, deck)
+            note_id = await anki.add_note(deck, model, fields, tags, options=options)
 
             if note_id:
                 tags_str = f" (tags: {', '.join(tags)})" if tags else ""
@@ -599,12 +637,15 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             global_tags = arguments.get("tags", [])
             model = arguments.get("model", "Basic")
             allow_duplicates = arguments.get("allow_duplicates", False)
+            duplicate_scope = arguments.get("duplicate_scope", "collection")
 
             # Ensure deck exists
             try:
                 await anki.create_deck(deck)
             except AnkiConnectError:
                 pass  # Deck already exists
+
+            note_options = _build_duplicate_options(allow_duplicates, duplicate_scope, deck)
 
             # Build notes list
             notes = []
@@ -618,7 +659,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                         "Back": card["back"]
                     },
                     "tags": card_tags,
-                    "options": {"allowDuplicate": allow_duplicates}
+                    "options": note_options
                 }
                 notes.append(note)
 
@@ -629,9 +670,12 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if not allow_duplicates and notes:
                 checks = await anki.can_add_notes_with_error_detail(notes)
                 addable_indices = [i for i, check in enumerate(checks) if check.get("canAdd")]
+
+                lookup_scope = f'deck:"{deck}" ' if duplicate_scope != "collection" else ""
                 for i, check in enumerate(checks):
                     if not check.get("canAdd"):
-                        existing_ids = await anki.find_notes(f'Front:"{_escape_anki_query_value(cards[i]["front"])}"')
+                        query = f'{lookup_scope}Front:"{_escape_anki_query_value(cards[i]["front"])}"'
+                        existing_ids = await anki.find_notes(query)
                         skipped.append({
                             "index": i,
                             "front": cards[i]["front"],

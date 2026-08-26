@@ -108,7 +108,8 @@ class AnkiClient:
         deck_name: str,
         model_name: str,
         fields: dict[str, str],
-        tags: list[str] | None = None
+        tags: list[str] | None = None,
+        options: dict | None = None
     ) -> int | None:
         """
         Add a single note to Anki.
@@ -118,6 +119,8 @@ class AnkiClient:
             model_name: Note type name (e.g., "Basic", "Cloze")
             fields: Dictionary of field names to values
             tags: Optional list of tags
+            options: Optional AnkiConnect note options (e.g. allowDuplicate,
+                duplicateScope, duplicateScopeOptions)
 
         Returns:
             Note ID if successful, None if duplicate
@@ -128,6 +131,8 @@ class AnkiClient:
             "fields": fields,
             "tags": tags or []
         }
+        if options:
+            note["options"] = options
 
         return await self._invoke("addNote", note=note)
 

@@ -187,3 +187,145 @@ class TestDuplicateScope:
         text = result[0].text
         assert "Added: 0" in text
         assert "Duplicates skipped: 1" in text
+
+
+class TestTagTools:
+    async def test_add_tags_by_note_ids(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        note_id = await patched_anki.add_note(
+            test_deck_name, "Basic", {"Front": "Q", "Back": "A"}, tags=["existing"]
+        )
+
+        result = await server.call_tool(
+            "add_tags", {"note_ids": [note_id], "tags": ["A2.2-Ch3"]}
+        )
+
+        assert "Added tags" in result[0].text
+        notes = await patched_anki.notes_info([note_id])
+        assert "existing" in notes[0]["tags"]
+        assert "A2.2-Ch3" in notes[0]["tags"]
+
+    async def test_add_tags_by_query(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        note_id = await patched_anki.add_note(
+            test_deck_name, "Basic", {"Front": "Q", "Back": "A"}, tags=["findme"]
+        )
+
+        result = await server.call_tool(
+            "add_tags", {"query": "tag:findme", "tags": ["tagged-via-query"]}
+        )
+
+        assert "Added tags" in result[0].text
+        notes = await patched_anki.notes_info([note_id])
+        assert "tagged-via-query" in notes[0]["tags"]
+
+    async def test_add_tags_requires_note_ids_or_query(self, patched_anki):
+        result = await server.call_tool("add_tags", {"tags": ["x"]})
+        assert "Error" in result[0].text
+
+    async def test_replace_tags_scoped_to_notes(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        note_id = await patched_anki.add_note(
+            test_deck_name, "Basic", {"Front": "Q", "Back": "A"}, tags=["A2.2-Ch3"]
+        )
+
+        result = await server.call_tool(
+            "replace_tags",
+            {"note_ids": [note_id], "tag": "A2.2-Ch3", "new_tag": "A2.2-Ch2"},
+        )
+
+        assert "Replaced tag" in result[0].text
+        notes = await patched_anki.notes_info([note_id])
+        assert "A2.2-Ch2" in notes[0]["tags"]
+        assert "A2.2-Ch3" not in notes[0]["tags"]
+
+    async def test_replace_tags_whole_collection(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        note_id = await patched_anki.add_note(
+            test_deck_name, "Basic", {"Front": "Q", "Back": "A"}, tags=["old-tag"]
+        )
+
+        result = await server.call_tool(
+            "replace_tags", {"tag": "old-tag", "new_tag": "new-tag"}
+        )
+
+        assert "entire collection" in result[0].text
+        notes = await patched_anki.notes_info([note_id])
+        assert "new-tag" in notes[0]["tags"]
+
+
+class TestUpdateNoteTags:
+    async def test_update_note_tags_only(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        note_id = await patched_anki.add_note(
+            test_deck_name, "Basic", {"Front": "Q", "Back": "A"}, tags=["old"]
+        )
+
+        result = await server.call_tool(
+            "update_note", {"note_id": note_id, "tags": ["new"]}
+        )
+
+        assert "Updated note" in result[0].text
+        notes = await patched_anki.notes_info([note_id])
+        assert notes[0]["tags"] == ["new"]
+
+    async def test_update_note_requires_fields_or_tags(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        note_id = await patched_anki.add_note(
+            test_deck_name, "Basic", {"Front": "Q", "Back": "A"}
+        )
+
+        result = await server.call_tool("update_note", {"note_id": note_id})
+
+        assert "Error" in result[0].text
+
+
+class TestDeckTools:
+    async def test_delete_deck_requires_confirm(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+
+        result = await server.call_tool(
+            "delete_deck", {"decks": [test_deck_name], "confirm": False}
+        )
+
+        assert "cancelled" in result[0].text
+        decks = await patched_anki.deck_names()
+        assert test_deck_name in decks
+
+    async def test_delete_deck_confirmed(self, patched_anki, test_deck_name):
+        await patched_anki.create_deck(test_deck_name)
+        await patched_anki.add_note(test_deck_name, "Basic", {"Front": "Q", "Back": "A"})
+
+        result = await server.call_tool(
+            "delete_deck", {"decks": [test_deck_name], "confirm": True}
+        )
+
+        assert "Deleted" in result[0].text
+        decks = await patched_anki.deck_names()
+        assert test_deck_name not in decks
+
+    async def test_rename_deck_moves_cards_and_deletes_old(self, patched_anki, test_deck_name):
+        new_name = f"{test_deck_name} Renamed"
+        await patched_anki.create_deck(test_deck_name)
+        await patched_anki.add_note(test_deck_name, "Basic", {"Front": "Q", "Back": "A"})
+
+        result = await server.call_tool(
+            "rename_deck", {"old_deck": test_deck_name, "new_deck": new_name}
+        )
+
+        assert "Renamed deck" in result[0].text
+        decks = await patched_anki.deck_names()
+        assert test_deck_name not in decks
+        assert new_name in decks
+
+        card_ids = await patched_anki.find_cards(f'deck:"{new_name}"')
+        assert len(card_ids) == 1
+
+    async def test_get_deck_config(self, patched_anki, mock_anki_server, test_deck_name):
+        mock_anki_server.set_deck_config(test_deck_name, new_per_day=25, review_per_day=150)
+
+        result = await server.call_tool("get_deck_config", {"deck": test_deck_name})
+
+        text = result[0].text
+        assert "25" in text
+        assert "150" in text

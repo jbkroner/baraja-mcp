@@ -368,7 +368,8 @@ async def list_tools() -> list[Tool]:
         # Phase 3: Content management tools
         Tool(
             name="update_note",
-            description="Update the content of an existing note's fields.",
+            description="Update an existing note's fields and/or tags. Passing 'tags' replaces the note's "
+                        "entire tag list (use add_tags/remove_tags to adjust individual tags instead).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -379,9 +380,14 @@ async def list_tools() -> list[Tool]:
                     "fields": {
                         "type": "object",
                         "description": "Dictionary of field names to new values (e.g., {'Front': 'new question', 'Back': 'new answer'})"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Complete replacement list of tags for the note"
                     }
                 },
-                "required": ["note_id", "fields"]
+                "required": ["note_id"]
             }
         ),
         Tool(
@@ -427,6 +433,59 @@ async def list_tools() -> list[Tool]:
             }
         ),
         Tool(
+            name="delete_deck",
+            description="Permanently delete one or more decks along with all cards and notes inside them. This action cannot be undone!",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "decks": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Deck names to delete"
+                    },
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Must be true to confirm deletion"
+                    }
+                },
+                "required": ["decks", "confirm"]
+            }
+        ),
+        Tool(
+            name="rename_deck",
+            description="Rename a deck. AnkiConnect has no direct rename action, so this moves all cards from "
+                        "the old deck into the new deck name and then deletes the now-empty old deck.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "old_deck": {
+                        "type": "string",
+                        "description": "Existing deck name to rename"
+                    },
+                    "new_deck": {
+                        "type": "string",
+                        "description": "New deck name"
+                    }
+                },
+                "required": ["old_deck", "new_deck"]
+            }
+        ),
+        Tool(
+            name="get_deck_config",
+            description="Get a deck's scheduling configuration, including new cards/day and review cards/day limits. "
+                        "Use this before planning batch adds or pacing advice instead of assuming a limit.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "deck": {
+                        "type": "string",
+                        "description": "Deck name"
+                    }
+                },
+                "required": ["deck"]
+            }
+        ),
+        Tool(
             name="remove_tags",
             description="Remove tags from notes.",
             inputSchema={
@@ -448,6 +507,58 @@ async def list_tools() -> list[Tool]:
                     }
                 },
                 "required": ["tags"]
+            }
+        ),
+        Tool(
+            name="add_tags",
+            description="Add tags to notes without removing any tags they already have.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "List of note IDs"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Anki search query to find notes (alternative to note_ids)"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of tags to add"
+                    }
+                },
+                "required": ["tags"]
+            }
+        ),
+        Tool(
+            name="replace_tags",
+            description="Rename a tag everywhere it's used, replacing it with a different tag. "
+                        "Scope to note_ids/query, or omit both to replace the tag across the entire collection.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "note_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "List of note IDs to scope the replacement to"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Anki search query to scope the replacement to (alternative to note_ids)"
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Existing tag to replace"
+                    },
+                    "new_tag": {
+                        "type": "string",
+                        "description": "New tag name"
+                    }
+                },
+                "required": ["tag", "new_tag"]
             }
         ),
         # Phase 4: Scheduling and bulk operations
@@ -1166,14 +1277,26 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         # Phase 3: Content management handlers
         elif name == "update_note":
             note_id = arguments["note_id"]
-            fields = arguments["fields"]
+            fields = arguments.get("fields")
+            tags = arguments.get("tags")
 
-            await anki.update_note_fields(note_id, fields)
+            if fields is None and tags is None:
+                return [TextContent(
+                    type="text",
+                    text="Error: Must provide 'fields' and/or 'tags' to update"
+                )]
 
-            field_names = ", ".join(fields.keys())
+            await anki.update_note(note_id, fields=fields, tags=tags)
+
+            summary_parts = []
+            if fields:
+                summary_parts.append(f"fields: {', '.join(fields.keys())}")
+            if tags is not None:
+                summary_parts.append(f"tags: {', '.join(tags) if tags else '(cleared)'}")
+
             return [TextContent(
                 type="text",
-                text=f"✓ Updated note {note_id} (fields: {field_names})"
+                text=f"✓ Updated note {note_id} ({'; '.join(summary_parts)})"
             )]
 
         elif name == "delete_notes":
@@ -1223,6 +1346,62 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 text=f"✓ Moved {len(card_ids)} card(s) to '{target_deck}'"
             )]
 
+        elif name == "delete_deck":
+            decks = arguments["decks"]
+            confirm = arguments.get("confirm", False)
+
+            if not confirm:
+                return [TextContent(
+                    type="text",
+                    text=f"⚠ Deletion cancelled. To delete {len(decks)} deck(s) "
+                         f"({', '.join(decks)}) and all cards/notes in them, set confirm=true.\n"
+                         f"This action cannot be undone!"
+                )]
+
+            await anki.delete_decks(decks)
+            return [TextContent(
+                type="text",
+                text=f"✓ Deleted {len(decks)} deck(s): {', '.join(decks)}"
+            )]
+
+        elif name == "rename_deck":
+            old_deck = arguments["old_deck"]
+            new_deck = arguments["new_deck"]
+
+            card_ids = await anki.find_cards(f'deck:"{old_deck}"')
+
+            if card_ids:
+                try:
+                    await anki.create_deck(new_deck)
+                except AnkiConnectError:
+                    pass
+                await anki.change_deck(card_ids, new_deck)
+
+            await anki.delete_decks([old_deck])
+
+            return [TextContent(
+                type="text",
+                text=f"✓ Renamed deck '{old_deck}' to '{new_deck}' ({len(card_ids)} card(s) moved)"
+            )]
+
+        elif name == "get_deck_config":
+            deck = arguments["deck"]
+            config = await anki.get_deck_config(deck)
+
+            new_per_day = config.get("new", {}).get("perDay")
+            rev_per_day = config.get("rev", {}).get("perDay")
+
+            result_parts = [f"Deck config for '{deck}' (preset: {config.get('name', 'Unknown')}):"]
+            if new_per_day is not None:
+                result_parts.append(f"  New cards/day: {new_per_day}")
+            if rev_per_day is not None:
+                result_parts.append(f"  Review cards/day: {rev_per_day}")
+
+            return [TextContent(
+                type="text",
+                text="\n".join(result_parts)
+            )]
+
         elif name == "remove_tags":
             note_ids = arguments.get("note_ids", [])
             query = arguments.get("query")
@@ -1247,6 +1426,59 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(
                 type="text",
                 text=f"✓ Removed tags [{', '.join(tags)}] from {len(note_ids)} note(s)"
+            )]
+
+        elif name == "add_tags":
+            note_ids = arguments.get("note_ids", [])
+            query = arguments.get("query")
+            tags = arguments["tags"]
+
+            if not note_ids and not query:
+                return [TextContent(
+                    type="text",
+                    text="Error: Must provide either 'note_ids' or 'query' parameter"
+                )]
+
+            if query:
+                note_ids = await anki.find_notes(query)
+                if not note_ids:
+                    return [TextContent(
+                        type="text",
+                        text=f"No notes found matching query: {query}"
+                    )]
+
+            tags_str = " ".join(tags)
+            await anki.add_tags(note_ids, tags_str)
+            return [TextContent(
+                type="text",
+                text=f"✓ Added tags [{', '.join(tags)}] to {len(note_ids)} note(s)"
+            )]
+
+        elif name == "replace_tags":
+            note_ids = arguments.get("note_ids", [])
+            query = arguments.get("query")
+            tag = arguments["tag"]
+            new_tag = arguments["new_tag"]
+
+            if not note_ids and not query:
+                await anki.replace_tags_in_all_notes(tag, new_tag)
+                return [TextContent(
+                    type="text",
+                    text=f"✓ Replaced tag '{tag}' with '{new_tag}' across the entire collection"
+                )]
+
+            if query:
+                note_ids = await anki.find_notes(query)
+                if not note_ids:
+                    return [TextContent(
+                        type="text",
+                        text=f"No notes found matching query: {query}"
+                    )]
+
+            await anki.replace_tags(note_ids, tag, new_tag)
+            return [TextContent(
+                type="text",
+                text=f"✓ Replaced tag '{tag}' with '{new_tag}' on {len(note_ids)} note(s)"
             )]
 
         # Phase 4: Scheduling handlers

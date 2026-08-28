@@ -270,6 +270,19 @@ User: "How many cards are in my Spanish deck?"
 Claude: [Uses get_deck_stats with deck="Spanish"]
 ```
 
+### `get_deck_config`
+
+Get a deck's scheduling configuration, including new cards/day and review cards/day limits. Use this before planning batch adds or giving pacing advice instead of assuming a limit.
+
+**Parameters:**
+- `deck` (required): Deck name
+
+**Example:**
+```
+User: "How many new cards per day is Spanish set to?"
+Claude: [Uses get_deck_config with deck="Spanish"]
+```
+
 ### `get_collection_stats`
 
 Get overall collection statistics including cards reviewed today, review history, and totals across all decks.
@@ -426,11 +439,12 @@ Claude: [Uses get_due_cards]
 
 ### `update_note`
 
-Update the content of an existing note's fields.
+Update an existing note's fields and/or tags. Passing `tags` replaces the note's entire tag list (use `add_tags`/`remove_tags` to adjust individual tags instead).
 
 **Parameters:**
 - `note_id` (required): The note ID to update
-- `fields` (required): Dictionary of field names to new values
+- `fields` (optional): Dictionary of field names to new values
+- `tags` (optional): Complete replacement list of tags for the note
 
 **Example:**
 ```
@@ -480,6 +494,65 @@ Remove tags from notes.
 ```
 User: "Remove the 'new' tag from all my Spanish cards"
 Claude: [Uses remove_tags with query="deck:Spanish", tags=["new"]]
+```
+
+### `add_tags`
+
+Add tags to notes without removing any tags they already have.
+
+**Parameters:**
+- `note_ids` (optional): List of note IDs
+- `query` (optional): Anki search query to find notes
+- `tags` (required): List of tags to add
+
+**Example:**
+```
+User: "Tag all my verb cards as 'A2.2-Ch3'"
+Claude: [Uses add_tags with query="tag:verb", tags=["A2.2-Ch3"]]
+```
+
+### `replace_tags`
+
+Rename a tag everywhere it's used, replacing it with a different tag in one call. Scope to `note_ids`/`query`, or omit both to replace the tag across the entire collection.
+
+**Parameters:**
+- `note_ids` (optional): List of note IDs to scope the replacement to
+- `query` (optional): Anki search query to scope the replacement to
+- `tag` (required): Existing tag to replace
+- `new_tag` (required): New tag name
+
+**Example:**
+```
+User: "Rename the tag A2.2-Ch3 to A2.2-Ch2"
+Claude: [Uses replace_tags with tag="A2.2-Ch3", new_tag="A2.2-Ch2"]
+```
+
+### `delete_deck`
+
+Permanently delete one or more decks along with all cards and notes inside them. This action cannot be undone!
+
+**Parameters:**
+- `decks` (required): List of deck names to delete
+- `confirm` (required): Must be true to confirm deletion
+
+**Example:**
+```
+User: "Delete the 'Old Vocab' deck, I confirm"
+Claude: [Uses delete_deck with decks=["Old Vocab"], confirm=true]
+```
+
+### `rename_deck`
+
+Rename a deck. AnkiConnect has no direct rename action, so this moves all cards from the old deck into the new deck name and then deletes the now-empty old deck.
+
+**Parameters:**
+- `old_deck` (required): Existing deck name to rename
+- `new_deck` (required): New deck name
+
+**Example:**
+```
+User: "Rename 'Spanish::Ch3' to 'Spanish::Chapter 3'"
+Claude: [Uses rename_deck with old_deck="Spanish::Ch3", new_deck="Spanish::Chapter 3"]
 ```
 
 ---

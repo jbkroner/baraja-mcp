@@ -101,6 +101,27 @@ class AnkiClient:
         """
         return await self._invoke("createDeck", deck=deck_name)
 
+    async def delete_decks(self, deck_names: list[str]) -> None:
+        """
+        Permanently delete decks along with all cards and notes inside them.
+
+        Args:
+            deck_names: List of deck names to delete
+        """
+        await self._invoke("deleteDecks", decks=deck_names, cardsToo=True)
+
+    async def get_deck_config(self, deck_name: str) -> dict:
+        """
+        Get the scheduling configuration for a deck (e.g. new cards/day).
+
+        Args:
+            deck_name: Name of the deck
+
+        Returns:
+            Deck configuration dictionary, including "new" and "rev" limits
+        """
+        return await self._invoke("getDeckConfig", deck=deck_name)
+
     # Note operations
 
     async def add_note(
@@ -209,6 +230,36 @@ class AnkiClient:
             tags: Space-separated tag string
         """
         await self._invoke("addTags", notes=note_ids, tags=tags)
+
+    async def replace_tags(self, note_ids: list[int], tag_to_replace: str, replace_with_tag: str) -> None:
+        """
+        Replace a tag with another tag on specific notes.
+
+        Args:
+            note_ids: List of note IDs
+            tag_to_replace: Existing tag to replace
+            replace_with_tag: New tag name
+        """
+        await self._invoke(
+            "replaceTags",
+            notes=note_ids,
+            tag_to_replace=tag_to_replace,
+            replace_with_tag=replace_with_tag
+        )
+
+    async def replace_tags_in_all_notes(self, tag_to_replace: str, replace_with_tag: str) -> None:
+        """
+        Replace a tag with another tag across the entire collection.
+
+        Args:
+            tag_to_replace: Existing tag to replace
+            replace_with_tag: New tag name
+        """
+        await self._invoke(
+            "replaceTagsInAllNotes",
+            tag_to_replace=tag_to_replace,
+            replace_with_tag=replace_with_tag
+        )
 
     # Sync operations
 
@@ -361,6 +412,30 @@ class AnkiClient:
             fields: Dictionary of field names to new values
         """
         await self._invoke("updateNoteFields", note={"id": note_id, "fields": fields})
+
+    async def update_note(
+        self,
+        note_id: int,
+        fields: dict[str, str] | None = None,
+        tags: list[str] | None = None
+    ) -> None:
+        """
+        Update a note's fields and/or replace its full tag list.
+
+        Unlike add_tags/remove_tags (which add or remove specific tags),
+        passing `tags` here replaces the note's entire tag list.
+
+        Args:
+            note_id: ID of the note to update
+            fields: Optional dictionary of field names to new values
+            tags: Optional new complete list of tags (replaces existing tags)
+        """
+        note: dict = {"id": note_id}
+        if fields is not None:
+            note["fields"] = fields
+        if tags is not None:
+            note["tags"] = tags
+        await self._invoke("updateNote", note=note)
 
     async def delete_notes(self, note_ids: list[int]) -> None:
         """

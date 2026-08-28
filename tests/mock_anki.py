@@ -55,6 +55,7 @@ class MockReview:
 class MockAnkiState:
     """In-memory state for mock Anki."""
     decks: dict[str, int] = field(default_factory=lambda: {"Default": 1})
+    deck_configs: dict[str, dict] = field(default_factory=dict)
     models: dict[str, list[str]] = field(default_factory=lambda: {
         "Basic": ["Front", "Back"],
         "Cloze": ["Text", "Extra"],
@@ -128,6 +129,8 @@ class MockAnkiConnect:
             "version": self._version,
             "deckNames": self._deck_names,
             "createDeck": self._create_deck,
+            "deleteDecks": self._delete_decks,
+            "getDeckConfig": self._get_deck_config,
             "modelNames": self._model_names,
             "modelFieldNames": self._model_field_names,
             "getTags": self._get_tags,
@@ -138,6 +141,9 @@ class MockAnkiConnect:
             "findNotes": self._find_notes,
             "notesInfo": self._notes_info,
             "addTags": self._add_tags,
+            "replaceTags": self._replace_tags,
+            "replaceTagsInAllNotes": self._replace_tags_in_all_notes,
+            "updateNote": self._update_note,
             "sync": self._sync,
             "guiAddCards": self._gui_add_cards,
             # Statistics methods
@@ -189,6 +195,43 @@ class MockAnkiConnect:
             self.state.decks[deck_name] = self.state.next_deck_id
             self.state.next_deck_id += 1
         return self.state.decks[deck_name]
+
+    def _delete_decks(self, params: dict) -> None:
+        deck_names = set(params["decks"])
+        to_delete = {
+            name for name in self.state.decks
+            if name in deck_names or any(name.startswith(f"{d}::") for d in deck_names)
+        }
+
+        for deck_name in to_delete:
+            self.state.decks.pop(deck_name, None)
+            self.state.deck_configs.pop(deck_name, None)
+
+            card_ids_to_delete = [
+                cid for cid, card in self.state.cards.items()
+                if card.deck_name == deck_name
+            ]
+            affected_note_ids = set()
+            for card_id in card_ids_to_delete:
+                affected_note_ids.add(self.state.cards[card_id].note_id)
+                del self.state.cards[card_id]
+
+            for note_id in affected_note_ids:
+                if not any(c.note_id == note_id for c in self.state.cards.values()):
+                    self.state.notes.pop(note_id, None)
+
+    def _get_deck_config(self, params: dict) -> dict:
+        deck_name = params["deck"]
+        if deck_name not in self.state.decks:
+            raise ValueError(f"Deck not found: {deck_name}")
+
+        config = self.state.deck_configs.get(deck_name, {})
+        return {
+            "id": self.state.decks[deck_name],
+            "name": config.get("name", "Default"),
+            "new": {"perDay": config.get("new_per_day", 20)},
+            "rev": {"perDay": config.get("review_per_day", 200)},
+        }
 
     def _model_names(self, params: dict) -> list[str]:
         return list(self.state.models.keys())
@@ -407,6 +450,52 @@ class MockAnkiConnect:
             if note_id in self.state.notes:
                 self.state.notes[note_id].tags.extend(new_tags)
                 self.state.tags.update(new_tags)
+
+    def _replace_tags(self, params: dict) -> None:
+        note_ids = params["notes"]
+        tag_to_replace = params["tag_to_replace"]
+        replace_with_tag = params["replace_with_tag"]
+
+        for note_id in note_ids:
+            note = self.state.notes.get(note_id)
+            if note and tag_to_replace in note.tags:
+                note.tags = [replace_with_tag if t == tag_to_replace else t for t in note.tags]
+                self.state.tags.add(replace_with_tag)
+
+    def _replace_tags_in_all_notes(self, params: dict) -> None:
+        tag_to_replace = params["tag_to_replace"]
+        replace_with_tag = params["replace_with_tag"]
+
+        replaced = False
+        for note in self.state.notes.values():
+            if tag_to_replace in note.tags:
+                note.tags = [replace_with_tag if t == tag_to_replace else t for t in note.tags]
+                replaced = True
+
+        if replaced:
+            self.state.tags.discard(tag_to_replace)
+            self.state.tags.add(replace_with_tag)
+
+    def _update_note(self, params: dict) -> None:
+        note_data = params["note"]
+        note_id = note_data["id"]
+        note = self.state.notes.get(note_id)
+        if not note:
+            raise ValueError(f"Note not found: {note_id}")
+
+        if "fields" in note_data:
+            fields = note_data["fields"]
+            note.fields.update(fields)
+            for card in self.state.cards.values():
+                if card.note_id == note_id:
+                    if "Front" in fields:
+                        card.question = fields["Front"]
+                    if "Back" in fields:
+                        card.answer = fields["Back"]
+
+        if "tags" in note_data:
+            note.tags = list(note_data["tags"])
+            self.state.tags.update(note.tags)
 
     def _sync(self, params: dict) -> None:
         pass  # No-op for mock
@@ -777,6 +866,15 @@ class MockAnkiConnect:
         self.state.reviews[deck_name] = reviews
 
     # Helper methods for test setup
+
+    def set_deck_config(self, deck_name: str, new_per_day: int = 20, review_per_day: int = 200, name: str = "Default") -> None:
+        """Configure the new/review cards-per-day limits returned by get_deck_config for testing."""
+        self._create_deck({"deck": deck_name})
+        self.state.deck_configs[deck_name] = {
+            "name": name,
+            "new_per_day": new_per_day,
+            "review_per_day": review_per_day,
+        }
 
     def add_problem_card(self, deck_name: str, low_ease: bool = False, high_lapses: bool = False):
         """Add a card with problem characteristics for testing."""

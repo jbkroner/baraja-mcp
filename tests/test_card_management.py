@@ -149,6 +149,112 @@ class TestContentManagement:
         assert "tag2" not in notes[0]["tags"]
         assert "tag3" in notes[0]["tags"]
 
+    async def test_add_tags(self, anki_client, test_deck_name):
+        """Test adding tags to notes without disturbing existing tags."""
+        await anki_client.create_deck(test_deck_name)
+        fields = {"Front": "Add Tag Test", "Back": "Answer"}
+        note_id = await anki_client.add_note(
+            test_deck_name, "Basic", fields,
+            tags=["existing"]
+        )
+
+        await anki_client.add_tags([note_id], "new1 new2")
+
+        notes = await anki_client.notes_info([note_id])
+        assert "existing" in notes[0]["tags"]
+        assert "new1" in notes[0]["tags"]
+        assert "new2" in notes[0]["tags"]
+
+    async def test_replace_tags(self, anki_client, test_deck_name):
+        """Test replacing one tag with another on specific notes."""
+        await anki_client.create_deck(test_deck_name)
+        fields = {"Front": "Replace Tag Test", "Back": "Answer"}
+        note_id = await anki_client.add_note(
+            test_deck_name, "Basic", fields,
+            tags=["A2.2-Ch3", "keep-me"]
+        )
+
+        await anki_client.replace_tags([note_id], "A2.2-Ch3", "A2.2-Ch2")
+
+        notes = await anki_client.notes_info([note_id])
+        assert "A2.2-Ch3" not in notes[0]["tags"]
+        assert "A2.2-Ch2" in notes[0]["tags"]
+        assert "keep-me" in notes[0]["tags"]
+
+    async def test_replace_tags_in_all_notes(self, anki_client, test_deck_name):
+        """Test replacing a tag across the entire collection."""
+        await anki_client.create_deck(test_deck_name)
+        note_id_1 = await anki_client.add_note(
+            test_deck_name, "Basic", {"Front": "Q1", "Back": "A1"}, tags=["old-tag"]
+        )
+        note_id_2 = await anki_client.add_note(
+            test_deck_name, "Basic", {"Front": "Q2", "Back": "A2"}, tags=["old-tag"]
+        )
+
+        await anki_client.replace_tags_in_all_notes("old-tag", "new-tag")
+
+        notes = await anki_client.notes_info([note_id_1, note_id_2])
+        for note in notes:
+            assert "old-tag" not in note["tags"]
+            assert "new-tag" in note["tags"]
+
+    async def test_update_note_tags(self, anki_client, test_deck_name):
+        """Test replacing a note's full tag list via update_note."""
+        await anki_client.create_deck(test_deck_name)
+        note_id = await anki_client.add_note(
+            test_deck_name, "Basic", {"Front": "Update Tags", "Back": "Answer"},
+            tags=["one", "two"]
+        )
+
+        await anki_client.update_note(note_id, tags=["three"])
+
+        notes = await anki_client.notes_info([note_id])
+        assert notes[0]["tags"] == ["three"]
+
+    async def test_update_note_fields_and_tags(self, anki_client, test_deck_name):
+        """Test updating fields and tags together via update_note."""
+        await anki_client.create_deck(test_deck_name)
+        note_id = await anki_client.add_note(
+            test_deck_name, "Basic", {"Front": "Original", "Back": "Original"},
+            tags=["old"]
+        )
+
+        await anki_client.update_note(
+            note_id, fields={"Front": "Updated"}, tags=["new"]
+        )
+
+        notes = await anki_client.notes_info([note_id])
+        assert notes[0]["fields"]["Front"]["value"] == "Updated"
+        assert notes[0]["tags"] == ["new"]
+
+
+class TestDeckManagement:
+    """Tests for deck deletion, rename, and config retrieval."""
+
+    async def test_delete_decks(self, anki_client, test_deck_name):
+        """Test deleting a deck and its cards/notes."""
+        await anki_client.create_deck(test_deck_name)
+        note_id = await anki_client.add_note(
+            test_deck_name, "Basic", {"Front": "Delete Deck Test", "Back": "Answer"}
+        )
+
+        await anki_client.delete_decks([test_deck_name])
+
+        decks = await anki_client.deck_names()
+        assert test_deck_name not in decks
+
+        notes = await anki_client.notes_info([note_id])
+        assert notes == []
+
+    async def test_get_deck_config(self, anki_client, mock_anki_server, test_deck_name):
+        """Test retrieving deck scheduling configuration."""
+        mock_anki_server.set_deck_config(test_deck_name, new_per_day=15, review_per_day=100)
+
+        config = await anki_client.get_deck_config(test_deck_name)
+
+        assert config["new"]["perDay"] == 15
+        assert config["rev"]["perDay"] == 100
+
 
 class TestScheduling:
     """Phase 4: Scheduling tests."""
